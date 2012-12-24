@@ -403,11 +403,13 @@ function connect_fcgi(socket, callback) {
 // Utilities
 //
 
+/** Coerce number-like values to numbers */
 function num_or_str(value) {
     var num_value = +value;
     return isNaN(num_value) ? value : num_value;
 }
 
+/** Just flip the FCGI.constants.record object */
 function learn_record_names() {
     var types = {};
     Object.keys(FCGI.constants.record).forEach(function (name) {
@@ -417,6 +419,7 @@ function learn_record_names() {
     return types;
 }
 
+/** Search for a double line break, either unix or inet style */
 function find_header_break(data) {
     var unix = new Buffer('\n\n');
     var inet = new Buffer('\r\n\r\n');
