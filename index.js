@@ -16,27 +16,19 @@
 
 // Specification: http://www.fastcgi.com/drupal/node/22
 
-require('defaultable').def(module,
-  { 'log': console
-  }, function(module, exports, DEFS) {
+var net = require('net');
+var URL = require('url');
+var util = require('util');
+var FCGI = require('fastcgi-parser');
 
-var net = require('net')
-var URL = require('url')
-var util = require('util')
-var http = require('http')
-var FCGI = require('fastcgi-parser')
+var FastCGIStream = require('./stream');
 
-var FastCGIStream = require('./stream')
+module.exports = { handler: fcgi_handler };
 
-var LOG = DEFS.log
-
-module.exports = { 'httpd': httpd
-                 , 'find_header_break': find_header_break
-                 }
-
-var RECORD_NAMES = learn_record_names()
+var RECORD_NAMES = learn_record_names();
 
 // Connect to a FastCGI service and run an HTTP front-end sending all requests to it.
+/*
 function httpd(port, host, socket_path, callback) {
   connect_fcgi(socket_path, 0, function(er, socket) {
     if(er)
@@ -47,7 +39,6 @@ function httpd(port, host, socket_path, callback) {
         return callback(er)
 
       values.FCGI_MPXS_CONNS = values.FCGI_MPXS_CONNS || 0
-      LOG.info('FCGI values: %j', values)
 
       var server = http.createServer(fcgi_handler(port, host, values, socket, socket_path))
       server.listen(port, host)
@@ -55,9 +46,9 @@ function httpd(port, host, socket_path, callback) {
     })
   })
 }
+*/
 
 function fcgi_get_values(socket, callback) {
-  LOG.info('Get FastCGI values')
   socket.on('data', on_data)
 
   var values = [ ['FCGI_MAX_CONNS' , '']
@@ -85,7 +76,6 @@ function fcgi_get_values(socket, callback) {
                      })
   socket.write(writer.tobuffer())
 
-  LOG.info('Listening for FastCGI values')
   var fcgi_values = {}
   var timeout = setTimeout(got_all_values, 100)
 
@@ -98,7 +88,6 @@ function fcgi_get_values(socket, callback) {
   }
 
   function on_error(er) {
-    LOG.error('Error getting FastCGI values: %s', er.message || er)
     parser.onRecord = parser.onError = function() {}
     callback(er)
   }
@@ -132,7 +121,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   return on_request
 
   function on_request(req, res) {
-    //LOG.info('Request: %j', req.url)
     request_id += 1
     var fcgi_request = { 'id': request_id
                        , 'req': req
@@ -146,17 +134,14 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   }
 
   function process_request() {
-    if(!socket)
-      return //LOG.info('Postpone request until FastCGI is back up')
+    if(!socket) return;
 
-    if(Object.keys(requests_in_flight).length && features.FCGI_MPXS_CONNS == 0)
-      return //LOG.info('Postpone request for non-multiplexed FastCGI')
+    if(Object.keys(requests_in_flight).length && features.FCGI_MPXS_CONNS == 0) return;
 
     var fcgi_request = pending_requests.shift()
-    if(!fcgi_request)
-      return //LOG.info('No requests to process')
-    else
-      requests_in_flight[fcgi_request.id] = fcgi_request
+    if(!fcgi_request) return;
+
+    requests_in_flight[fcgi_request.id] = fcgi_request
 
     var req = fcgi_request.req
       , res = fcgi_request.res
@@ -190,7 +175,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     })
 
     // Write the request to FastCGI.
-    //LOG.info('Write request %d to FastCGI: %j', fcgi_request.id, req.url)
     var writer = new FCGI.writer
     writer.encoding = 'binary'
 
@@ -271,7 +255,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   }
 
   function on_end() {
-    //LOG.info('FastCGI socket closed')
     socket = null
 
     var in_flight_ids = Object.keys(requests_in_flight)
@@ -285,17 +268,13 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
         aborts.push(request_in_flight)
       else {
         // This can be retried when FastCGI comes back on-line.
-        if(request_in_flight.sent && request_in_flight.req.method == 'GET')
-          LOG.info('Schedule retry GET request %d', request_in_flight.id)
         request_in_flight.sent = false
         pending_requests.unshift(request_in_flight)
       }
     })
 
     if(aborts.length) {
-      LOG.warn('FastCGI socket closed with %d in-flight requests sent', aborts.length)
       aborts.forEach(function(aborted_request) {
-        LOG.warn('  Req %d: %s', aborted_request.id, aborted_request.req.url)
         aborted_request.res.end()
       })
     }
@@ -304,7 +283,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
       if(er)
         throw er // TODO
 
-      //LOG.info('Reconnected: %s', socket_path)
       socket = new_socket
       prep_socket()
     })
@@ -321,7 +299,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   }
 
   function on_error(er) {
-    LOG.error('Error from FastCGI parser: %s', er.message || er)
     throw er // TODO
   }
 
@@ -333,7 +310,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
   // Handle incoming responder records.
   function on_record(record) {
     var parser = this
-    //LOG.info('Record %s: %s', RECORD_NAMES[record.header.type], record.header.recordId)
 
     record.bodies = parser.bodies
     parser.bodies = []
@@ -344,15 +320,12 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     }
 
     var req_id = record.header.recordId
-    if(req_id == 0)
-      return LOG.info('Ignoring management record: %j', record)
+    if(req_id == 0) return // Ignore management record
 
     var request = requests_in_flight[req_id]
-    if(!request)
-      return LOG.error('Record for unknown request: %s\n%s', req_id, util.inspect(request))
+    if(!request) return // Unknown request
 
-    if(record.header.type == FCGI.constants.record.FCGI_STDERR)
-      return LOG.error('Error: %s', record.body_utf8().trim())
+    if(record.header.type == FCGI.constants.record.FCGI_STDERR) return // error('Error: %s', record.body_utf8().trim())
 
     else if(record.header.type == FCGI.constants.record.FCGI_STDOUT) {
       request.stdout = request.stdout.concat(record.bodies)
@@ -361,7 +334,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
 
     else if(record.header.type == FCGI.constants.record.FCGI_END) {
       request.res.end()
-      LOG.info('%s %s %d', request.req.method, request.req.url, request.status)
       delete requests_in_flight[req_id]
 
       if(request.keepalive == FCGI.constants.keepalive.ON)
@@ -371,24 +343,18 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     }
 
     else {
-      LOG.info('Unknown record: %j', record)
       Object.keys(FCGI.constants.record).forEach(function(type) {
         if(record.header.type == FCGI.constants.record[type])
-          LOG.info('Unknown record type: %s', type)
       })
     }
   }
 
   function send_stdout(request) {
     if(!request.status) {
-      //LOG.log('Look for headers and status: %d', request.id)
-
       var data_so_far = Buffer.concat(request.stdout)
         , header_break = find_header_break(data_so_far)
-      //LOG.log('  %d bytes so far, break: %j', data_so_far.length, header_break)
 
-      if(!header_break)
-        return LOG.log('  No complete headers yet in stdout') // Still waiting for all headers to arrive.
+      if(!header_break) return // Still waiting for all headers to arrive.
 
       // Headers have arrived. Convert them into a .writeHead() and only write subsequent data.
       request.stdout = [ data_so_far.slice(header_break.end, data_so_far.length) ]
@@ -429,7 +395,6 @@ function connect_fcgi(socket, attempts, callback) {
   fcgid.on('connect', on_connect)
 
   function on_connect() {
-    //LOG.info('Connected to FastCGI daemon: %s', socket)
     fcgid.removeListener('error', on_error)
     return callback(null, fcgid)
   }
@@ -437,17 +402,14 @@ function connect_fcgi(socket, attempts, callback) {
   function on_error(er) {
     if(er.code == 'ECONNREFUSED') {
       var delay = 100 * Math.pow(2, attempts)
-      LOG.info('Waiting %d ms to connect', delay)
       return setTimeout(function() { connect_fcgi(socket, attempts+1, callback) }, delay)
     }
 
     else if(er.code == 'ENOENT') {
-      LOG.error('Error: No such socket: %s', socket)
       return callback(er)
     }
 
     else {
-      LOG.error('Unknown error on FastCGI connection: %s', er.message)
       return callback(er)
     }
   }
@@ -484,5 +446,3 @@ function find_header_break(data) {
 
   return null
 }
-
-}) // defaultable

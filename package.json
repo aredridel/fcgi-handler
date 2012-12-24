@@ -7,6 +7,7 @@
   ],
   "version": "0.1.4",
   "author": "Jason Smith <jhs@iriscouch.com> (http://www.iriscouch.com)",
+  "contributors": ["Aria Stewart <aredridel@dinhe.net>"],
   "repository": {
     "type": "git",
     "url": "https://github.com/iriscouch/fastcgi"
@@ -14,8 +15,8 @@
   "engines": {
     "node": ">= 0.8"
   },
-  "main": "./fastcgi.js",
-  "bin": "./cli.js",
+  "main": "./index.js",
+  "bin": "./bin/fastcgi.js",
   "dependencies": {
     "optimist": "~0.3.4",
     "fastcgi-parser": "~0.1.5"
