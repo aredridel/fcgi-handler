@@ -1,23 +1,22 @@
 {
-  "name": "fastcgi",
-  "description": "Simple, robust node.js web server that runs FastCGI applications",
-  "keywords": [
-    "fastcgi",
-    "http"
-  ],
-  "version": "0.1.4",
-  "author": "Jason Smith <jhs@iriscouch.com> (http://www.iriscouch.com)",
-  "contributors": ["Aria Stewart <aredridel@dinhe.net>"],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/iriscouch/fastcgi"
-  },
-  "engines": {
-    "node": ">= 0.8"
-  },
-  "main": "./index.js",
-  "bin": "./bin/fastcgi.js",
-  "dependencies": {
-    "fastcgi-parser": "~0.1.5"
-  }
+    "name": "fcgi-handler",
+    "description": "Handler for HTTP request forwarding to a FastCGI server",
+    "keywords": [ "fastcgi", "http" ],
+    "version": "0.1.4",
+    "author": "Jason Smith <jhs@iriscouch.com> (http://www.iriscouch.com)",
+    "maintainers": [
+        "Aria Stewart <aredridel@dinhe.net>"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/iriscouch/fastcgi"
+    },
+    "engines": {
+        "node": ">= 0.8"
+    },
+    "main": "./index.js",
+    "dependencies": {
+        "fastcgi-parser": "~0.1.5",
+        "fcgi-stream": "~0.1.4"
+    }
 }

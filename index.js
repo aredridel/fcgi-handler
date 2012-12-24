@@ -22,9 +22,11 @@ var URL = require('url');
 var util = require('util');
 var FCGI = require('fastcgi-parser');
 
-var FastCGIStream = require('./stream');
+var FastCGIStream = require('fcgi-stream');
 
-module.exports = { handler: fcgi_handler };
+module.exports = {
+    handler: fcgi_handler
+};
 
 var RECORD_NAMES = learn_record_names();
 
