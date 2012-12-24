@@ -49,66 +49,69 @@ function httpd(port, host, socket_path, callback) {
 */
 
 function fcgi_get_values(socket, callback) {
-  socket.on('data', on_data)
+    socket.on('data', on_data);
 
-  var values = [ ['FCGI_MAX_CONNS' , '']
-               , ['FCGI_MAX_REQS'  , '']
-               , ['FCGI_MPXS_CONNS', '']
-               ]
+    var values = [
+        ['FCGI_MAX_CONNS' , ''],
+        ['FCGI_MAX_REQS'  , ''],
+        ['FCGI_MPXS_CONNS', '']
+    ];
 
-  var writer = new FCGI.writer
-  writer.encoding = 'binary'
+    var writer = new FCGI.writer();
+    writer.encoding = 'binary';
 
-  writer.writeHeader({ 'version' : FCGI.constants.version
-                     , 'type'    : FCGI.constants.record.FCGI_GET_VALUES
-                     , 'recordId': 0
-                     , 'contentLength': FCGI.getParamLength(values)
-                     , 'paddingLength': 0
-                     })
-  writer.writeParams(values)
-  socket.write(writer.tobuffer())
+    writer.writeHeader({
+        version: FCGI.constants.version,
+        type: FCGI.constants.record.FCGI_GET_VALUES,
+        recordId: 0,
+        contentLength: FCGI.getParamLength(values),
+        paddingLength: 0
+    });
+    writer.writeParams(values);
+    socket.write(writer.tobuffer());
 
-  writer.writeHeader({ 'version' : FCGI.constants.version
-                     , 'type'    : FCGI.constants.record.FCGI_GET_VALUES
-                     , 'recordId': 0
-                     , 'contentLength': 0
-                     , 'paddingLength': 0
-                     })
-  socket.write(writer.tobuffer())
+    writer.writeHeader({
+        version: FCGI.constants.version,
+        type: FCGI.constants.record.FCGI_GET_VALUES,
+        recordId: 0,
+        contentLength: 0,
+        paddingLength: 0
+    });
 
-  var fcgi_values = {}
-  var timeout = setTimeout(got_all_values, 100)
+    socket.write(writer.tobuffer());
 
-  function on_data(data) {
-    var parser = new FCGI.parser
-    parser.encoding = 'utf8'
-    parser.onRecord = on_record
-    parser.onError  = on_error
-    parser.execute(data)
-  }
+    var fcgi_values = {};
+    var timeout = setTimeout(got_all_values, 100);
 
-  function on_error(er) {
-    parser.onRecord = parser.onError = function() {}
-    callback(er)
-  }
+    function on_data(data) {
+        var parser = new FCGI.parser();
+        parser.encoding = 'utf8';
+        parser.onRecord = on_record;
+        parser.onError  = on_error;
+        parser.execute(data);
+    }
 
-  function on_record(record) {
-    var params = record.body.params || {}
-      , keys = Object.keys(params)
+    function on_error(er) {
+        parser.onRecord = parser.onError = function() {};
+        callback(er);
+    }
 
-    keys.forEach(function(key) {
-      fcgi_values[key] = num_or_str(params[key])
-    })
+    function on_record(record) {
+        var params = record.body.params || {};
+        var keys = Object.keys(params);
 
-    if(keys.length == 0)
-      got_all_values()
-  }
+        keys.forEach(function(key) {
+            fcgi_values[key] = num_or_str(params[key]);
+        });
 
-  function got_all_values() {
-    clearTimeout(timeout)
-    socket.removeListener('data', on_data)
-    callback(null, fcgi_values)
-  }
+        if(keys.length === 0) got_all_values();
+    }
+
+    function got_all_values() {
+        clearTimeout(timeout);
+        socket.removeListener('data', on_data);
+        callback(null, fcgi_values);
+    }
 }
 
 function fcgi_handler(port, server_addr, features, socket, socket_path) {
