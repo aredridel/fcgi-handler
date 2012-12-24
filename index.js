@@ -31,7 +31,7 @@ var RECORD_NAMES = learn_record_names();
 // Connect to a FastCGI service and run an HTTP front-end sending all requests to it.
 /*
 function httpd(port, host, socket_path, callback) {
-  connect_fcgi(socket_path, 0, function (er, socket) {
+  connect_fcgi(socket_path, function (er, socket) {
     if (er)
       return callback(er)
 
@@ -287,7 +287,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
             });
         }
 
-        connect_fcgi(socket_path, 0, function (er, new_socket) {
+        connect_fcgi(socket_path, function (er, new_socket) {
             if (er) throw er; // TODO
 
             socket = new_socket;
@@ -385,15 +385,11 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
     }
 }
 
-function connect_fcgi(socket, attempts, callback) {
-    if (attempts > 5) {
-        return callback(new Error('Failed to connect to back-end socket'));
-    }
-
+function connect_fcgi(socket, callback) {
     // Try to connect to the back-end socket.
     var fcgid = net.connect({'path': socket});
 
-    fcgid.on('error', on_error);
+    fcgid.on('error', callback);
     fcgid.on('connect', on_connect);
 
     function on_connect() {
@@ -401,18 +397,6 @@ function connect_fcgi(socket, attempts, callback) {
         return callback(null, fcgid);
     }
 
-    function on_error(er) {
-        if (er.code == 'ECONNREFUSED') {
-            var delay = 100 * Math.pow(2, attempts);
-            return setTimeout(function () {
-                connect_fcgi(socket, attempts + 1, callback);
-            }, delay);
-        } else if (er.code == 'ENOENT') {
-            return callback(er);
-        } else {
-            return callback(er);
-        }
-    }
 }
 
 //
