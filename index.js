@@ -16,7 +16,10 @@
 
 // Specification: http://www.fastcgi.com/drupal/node/22
 
-/*jshint indent: 4 */
+/*jshint indent: 4, undef: true, node: true */
+
+"use strict";
+
 var net = require('net');
 var URL = require('url');
 var util = require('util');
@@ -25,7 +28,7 @@ var FCGI = require('fastcgi-parser');
 var FastCGIStream = require('fcgi-stream');
 
 module.exports = {
-    handler: fcgi_handler
+    connect: connect
 };
 
 // Connect to a FastCGI service and run an HTTP front-end sending all requests to it.
@@ -88,13 +91,12 @@ function fcgi_get_values(socket, callback) {
         var parser = new FCGI.parser();
         parser.encoding = 'utf8';
         parser.onRecord = on_record;
-        parser.onError  = on_error;
-        parser.execute(data);
-    }
+        parser.onError  = function on_error(er) {
+            this.onRecord = this.onError = function () {};
+            callback(er);
+        };
 
-    function on_error(er) {
-        parser.onRecord = parser.onError = function () {};
-        callback(er);
+        parser.execute(data);
     }
 
     function on_record(record) {
@@ -115,16 +117,29 @@ function fcgi_get_values(socket, callback) {
     }
 }
 
-function fcgi_handler(port, server_addr, features, socket, socket_path) {
+function connect(options, connectListener) {
+    var connection = new FCGIConnection(options);
+
+    connection.socket.on('error', connectListener);
+    connection.socket.on('connect', onConnect);
+
+    function onConnect() {
+        connection.socket.removeListener('error', connectListener);
+        return connectListener(null, connection);
+    }
+}
+
+function FCGIConnection(options) {
     var request_id = 0;
     var requests_in_flight = {};
     var pending_requests = [];
     var fcgi_stream = null;
 
-    prep_socket();
-    return on_request;
+    var socket = this.socket = net.connect(options);
 
-    function on_request(req, res) {
+    prep_socket();
+
+    this.handle = function proxyToFastCGI(req, res) {
         request_id += 1;
         var fcgi_request = {
             id: request_id,
@@ -136,12 +151,14 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
         };
         pending_requests.push(fcgi_request);
         process_request();
-    }
+    };
+
+    return this;
 
     function process_request() {
         if (!socket) return;
 
-        if (Object.keys(requests_in_flight).length && !features.FCGI_MPXS_CONNS) return;
+        if (Object.keys(requests_in_flight).length && !options.multiplex) return;
 
         var fcgi_request = pending_requests.shift();
         if (!fcgi_request) return;
@@ -154,8 +171,10 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
         var req_url = URL.parse(req.url);
         var cgi = {
             PATH_INFO: req_url.pathname,
-            SERVER_NAME: server_addr || 'unknown',
-            SERVER_PORT: port,
+            // SERVER_NAME: server_addr || 'unknown',
+            SERVER_NAME: 'unknown',
+            // SERVER_PORT: port,
+            SERVER_PORT: 80,
             SERVER_PROTOCOL: 'HTTP/1.1',
             SERVER_SOFTWARE: 'Node/' + process.version
         };
@@ -287,66 +306,62 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
             });
         }
 
+        /*
         connect_fcgi(socket_path, function (er, new_socket) {
             if (er) throw er; // TODO
 
             socket = new_socket;
             prep_socket();
         });
+        */
     }
 
     function on_data(data) {
         var parser = new FCGI.parser();
         parser.bodies = [];
         parser.encoding = 'binary';
-        parser.onBody   = on_body;
-        parser.onRecord = on_record;
+        parser.onBody   = function on_body(data, start, end) {
+            data = data.slice(start, end);
+            this.bodies.push(data);
+        };
+        parser.onRecord = function on_record(record) {
+            record.bodies = this.bodies;
+            this.bodies = [];
+            record.body_utf8 = function () {
+                return this.bodies.map(function (data) {
+                    return data.toString();
+                }).join('');
+            };
+
+            var req_id = record.header.recordId;
+            if (req_id === 0) return; // Ignore management record
+
+            var request = requests_in_flight[req_id];
+            if (!request) return; // Unknown request
+
+            if (record.header.type == FCGI.constants.record.FCGI_STDERR) {
+                return; // error('Error: %s', record.body_utf8().trim())
+            } else if (record.header.type == FCGI.constants.record.FCGI_STDOUT) {
+                request.stdout = request.stdout.concat(record.bodies);
+                return send_stdout(request);
+            } else if (record.header.type == FCGI.constants.record.FCGI_END) {
+                request.res.end();
+                delete requests_in_flight[req_id];
+
+                if (request.keepalive == FCGI.constants.keepalive.ON) {
+                    process_request(); // If there are more in the queue, get to them now.
+                } else {
+                    socket.end();
+                }
+            }
+        };
+
         parser.onError  = on_error;
         parser.execute(data);
     }
 
     function on_error(er) {
         throw er; // TODO
-    }
-
-    function on_body(data, start, end) {
-        data = data.slice(start, end);
-        this.bodies.push(data);
-    }
-
-    // Handle incoming responder records.
-    function on_record(record) {
-        var parser = this;
-
-        record.bodies = parser.bodies;
-        parser.bodies = [];
-        record.body_utf8 = function () {
-            return this.bodies.map(function (data) {
-                return data.toString();
-            }).join('');
-        };
-
-        var req_id = record.header.recordId;
-        if (req_id === 0) return; // Ignore management record
-
-        var request = requests_in_flight[req_id];
-        if (!request) return; // Unknown request
-
-        if (record.header.type == FCGI.constants.record.FCGI_STDERR) {
-            return; // error('Error: %s', record.body_utf8().trim())
-        } else if (record.header.type == FCGI.constants.record.FCGI_STDOUT) {
-            request.stdout = request.stdout.concat(record.bodies);
-            return send_stdout(request);
-        } else if (record.header.type == FCGI.constants.record.FCGI_END) {
-            request.res.end();
-            delete requests_in_flight[req_id];
-
-            if (request.keepalive == FCGI.constants.keepalive.ON) {
-                process_request(); // If there are more in the queue, get to them now.
-            } else {
-                socket.end();
-            }
-        }
     }
 
     function send_stdout(request) {
@@ -375,7 +390,7 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
             });
 
             delete headers['accept-encoding'];
-            request.res.writeHead(request.status, headers);
+            request.res.writeHead(request.status ? request.status : 200, headers);
         }
 
         while (request.stdout.length > 0) {
@@ -383,20 +398,6 @@ function fcgi_handler(port, server_addr, features, socket, socket_path) {
             request.res.write(data);
         }
     }
-}
-
-function connect_fcgi(socket, callback) {
-    // Try to connect to the back-end socket.
-    var fcgid = net.connect({'path': socket});
-
-    fcgid.on('error', callback);
-    fcgid.on('connect', on_connect);
-
-    function on_connect() {
-        fcgid.removeListener('error', on_error);
-        return callback(null, fcgid);
-    }
-
 }
 
 //
