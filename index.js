@@ -24,33 +24,13 @@ var net = require('net');
 var URL = require('url');
 var util = require('util');
 var FCGI = require('fastcgi-parser');
+var cgiEnv = require('cgi-env');
 
 var FastCGIStream = require('fcgi-stream');
 
 module.exports = {
     connect: connect
 };
-
-// Connect to a FastCGI service and run an HTTP front-end sending all requests to it.
-/*
-function httpd(port, host, socket_path, callback) {
-  connect_fcgi(socket_path, function (er, socket) {
-    if (er)
-      return callback(er)
-
-    fcgi_get_values(socket, function (er, values) {
-      if (er)
-        return callback(er)
-
-      values.FCGI_MPXS_CONNS = values.FCGI_MPXS_CONNS || 0
-
-      var server = http.createServer(fcgi_handler(port, host, values, socket, socket_path))
-      server.listen(port, host)
-      return callback(null)
-    })
-  })
-}
-*/
 
 function fcgi_get_values(socket, callback) {
     socket.on('data', on_data);
@@ -139,12 +119,13 @@ function FCGIConnection(options) {
 
     prep_socket();
 
-    this.handle = function proxyToFastCGI(req, res) {
+    this.handle = function proxyToFastCGI(req, res, options) {
         request_id += 1;
         var fcgi_request = {
             id: request_id,
             req: req,
             res: res,
+            options: options,
             stdout: [],
             stderr: [],
             keepalive: FCGI.constants.keepalive.OFF
@@ -168,31 +149,13 @@ function FCGIConnection(options) {
         var req = fcgi_request.req;
         var res = fcgi_request.res;
 
-        var req_url = URL.parse(req.url);
-        var cgi = {
-            PATH_INFO: req_url.pathname,
-            // SERVER_NAME: server_addr || 'unknown',
-            SERVER_NAME: 'unknown',
-            // SERVER_PORT: port,
-            SERVER_PORT: 80,
-            SERVER_PROTOCOL: 'HTTP/1.1',
-            SERVER_SOFTWARE: 'Node/' + process.version
-        };
+        var cgi = cgiEnv.createEnvironment(req);
 
-        Object.keys(req.headers).forEach(function (header) {
-            var key = 'HTTP_' + header.toUpperCase().replace(/-/g, '_');
-            cgi[key] = req.headers[header];
-        });
-
-        cgi.REQUEST_METHOD = req.method;
-        cgi.QUERY_STRING = req_url.query || '';
-        if ('content-length' in req.headers) cgi.CONTENT_LENGTH = req.headers['content-length'];
-        if ('content-type' in req.headers) cgi.CONTENT_TYPE = req.headers['content-type'];
-        if ('authorization' in req.headers) cgi.AUTH_TYPE = req.headers.authorization.split(/ /)[0];
-
-        var params = Object.keys(cgi).map(function (key) {
-            return [key, cgi[key]];
-        });
+        if (fcgi_request.options.env) {
+            for (var v in fcgi_request.options.env) {
+                cgi[v] = fcgi_request.options.env[v];
+            }
+        }
 
         // Write the request to FastCGI.
         var writer = new FCGI.writer();
@@ -211,6 +174,10 @@ function FCGIConnection(options) {
             flags: fcgi_request.keepalive
         });
         socket.write(writer.tobuffer());
+
+        var params = Object.keys(cgi).map(function (v) {
+            return [v, cgi[v]];
+        });
 
         // Parameters
         writer.writeHeader({

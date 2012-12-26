@@ -17,6 +17,7 @@
     "main": "./index.js",
     "dependencies": {
         "fastcgi-parser": "~0.1.5",
-        "fcgi-stream": "~0.1.4"
+        "fcgi-stream": "~0.1.4",
+        "cgi-env": "~0.0.1"
     }
 }
