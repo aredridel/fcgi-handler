@@ -38,3 +38,7 @@ This is all based on the IrisCouch [FastCGI module][fastcgi] maintained by Jason
 [fastcgi]: http://npmjs.org/package/fastcgi
 [@_jhs]: http://twitter.com/_jhs
 [@substack]: http://twitter.com/substack
+
+## Todo
+
+* Add persistent connections to the FastCGI server, using a node Agent-like pattern
