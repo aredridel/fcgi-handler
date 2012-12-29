@@ -30,3 +30,11 @@ Suppose you have a FastCGI application (e.g. Django) listening on Unix socket `/
 Apache 2.0
 
 [npm]: http://npmjs.org
+
+## Credits
+
+This is all based on the IrisCouch [FastCGI module][fastcgi] maintained by Jason Smith ([@_jhs][@_jhs]), but I took a machete to it [@substack][@substack]-style.
+
+[fastcgi]: http://npmjs.org/package/fastcgi
+[@_jhs]: http://twitter.com/_jhs
+[@substack]: http://twitter.com/substack
